@@ -40,12 +40,21 @@ export async function createTeam(input: unknown) {
   if (!input || typeof input !== 'object') throw httpError(400, 'Team input is required');
   const { name, mascot, members } = input as { name?: unknown; mascot?: unknown; members?: unknown };
   if (typeof name !== 'string' || name.trim() === '') throw httpError(400, 'Team name is required');
-  const memberIds = Array.isArray(members) ? members.filter((id): id is string => typeof id === 'string' && mongoose.isValidObjectId(id)) : [];
+  if (typeof mascot !== 'string' || mascot.trim() === '') throw httpError(400, 'Team mascot is required');
   if (members !== undefined && !Array.isArray(members)) throw httpError(400, 'Team members must be an array');
+  const memberIds: string[] = [];
+  if (Array.isArray(members)) {
+    for (const memberId of members) {
+      if (typeof memberId !== 'string' || !mongoose.isValidObjectId(memberId)) {
+        throw httpError(400, 'Team member IDs must be valid IDs');
+      }
+      memberIds.push(memberId);
+    }
+  }
   for (const memberId of memberIds) {
     if (!await User.exists({ _id: memberId })) throw httpError(404, 'Team member not found');
   }
-  return Team.create({ name: name.trim(), mascot: typeof mascot === 'string' ? mascot.trim() : '', members: memberIds });
+  return Team.create({ name: name.trim(), mascot: mascot.trim(), members: memberIds });
 }
 
 export async function getLeaderboard() {

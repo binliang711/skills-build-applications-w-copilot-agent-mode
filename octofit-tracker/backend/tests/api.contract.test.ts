@@ -55,6 +55,17 @@ describe('OctoFit API contract', () => {
     const member = await User.create({ name: 'Mona', email: 'mona@example.com', fitnessGoal: 'endurance' });
     const invalid = await request(app).post('/api/teams').send({ mascot: 'Mona' });
     expect(invalid.status).toBe(400);
+    const missingMascot = await request(app).post('/api/teams').send({ name: 'Octocats', members: [] });
+    expect(missingMascot.status).toBe(400);
+    const blankMascot = await request(app).post('/api/teams').send({ name: 'Octocats', mascot: '  ', members: [] });
+    expect(blankMascot.status).toBe(400);
+    const malformedMembers = await request(app).post('/api/teams').send({
+      name: 'Octocats',
+      mascot: 'Mona',
+      members: [member._id.toString(), 'not-an-id'],
+    });
+    expect(malformedMembers.status).toBe(400);
+    expect(await Team.countDocuments()).toBe(0);
     const created = await request(app).post('/api/teams').send({ name: 'Octocats', mascot: 'Mona', members: [member._id.toString()] });
     expect(created.status).toBe(201);
     expect(created.body.team).toMatchObject({ name: 'Octocats', mascot: 'Mona' });
@@ -78,12 +89,12 @@ describe('OctoFit API contract', () => {
       { teamName: 'Octocats', totalPoints: 25, rank: 2 },
     ]);
   });
-  it('suggests workouts that match each user activity pattern', async () => {
+  it('prioritizes fitness goals over conflicting recent activity for workout suggestions', async () => {
     const mona = await createUserAndTeam('Mona', 'mona@example.com', 'Mona', 'Octocats');
     const hubot = await createUserAndTeam('Hubot', 'hubot@example.com', 'Hubot', 'Robocats');
     await User.updateOne({ _id: hubot.user._id }, { $set: { fitnessGoal: 'strength' } });
     await Activity.create([
-      { user: mona.user._id, team: mona.team._id, type: 'run', minutes: 40, points: 40, occurredAt: new Date() },
+      { user: mona.user._id, team: mona.team._id, type: 'strength', minutes: 40, points: 40, occurredAt: new Date() },
       { user: hubot.user._id, team: hubot.team._id, type: 'strength', minutes: 20, points: 20, occurredAt: new Date() },
     ]);
     await Workout.create([
@@ -93,7 +104,7 @@ describe('OctoFit API contract', () => {
 
     const monaResponse = await request(app).get('/api/workouts/suggestions/mona%40example.com');
     expect(monaResponse.status).toBe(200);
-    expect(monaResponse.body.suggestions[0]).toMatchObject({ title: 'Intervals', focus: 'endurance', reason: expect.stringMatching(/run|endurance|activity/i) });
+    expect(monaResponse.body.suggestions[0]).toMatchObject({ title: 'Intervals', focus: 'endurance', reason: expect.stringContaining('recent strength activity') });
 
     const hubotResponse = await request(app).get('/api/workouts/suggestions/hubot%40example.com');
     expect(hubotResponse.status).toBe(200);
